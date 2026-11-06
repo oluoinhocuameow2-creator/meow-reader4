@@ -5561,26 +5561,37 @@ function meowGenerateGoogleCustomerId(){
   return "Meow"+token.slice(0,16);
 }
 async function meowFindCustomerByGoogleEmail(email){
-  const key=meowEmailIndexKey(email);
+  // Luôn dùng cùng một chuẩn Gmail với Google Login (bỏ dấu chấm và phần +tag).
+  const canonicalEmail=meowNormalizeGoogleEmail(email);
+  const key=meowEmailIndexKey(canonicalEmail);
   const indexSnap=await get(ref(db,"customerEmailIndex/"+key));
   if(indexSnap.exists()){
     const indexed=indexSnap.val()||{};
     if(indexed.id){
       const customerSnap=await get(ref(db,"customers/"+String(indexed.id)));
-      if(customerSnap.exists())return {id:String(indexed.id),data:customerSnap.val()||{}};
+      if(customerSnap.exists()){
+        const data=customerSnap.val()||{};
+        // Không tin index cũ nếu nó trỏ nhầm tài khoản/Gmail.
+        if(meowNormalizeGoogleEmail(data.email||data.gmail||"")===canonicalEmail){
+          return {id:String(indexed.id),data};
+        }
+      }
     }
   }
-  // Fallback for accounts registered before customerEmailIndex was introduced.
+  // Fallback đồng thời tự sửa index cũ đang trỏ về ID đã đổi.
   const customersSnap=await get(ref(db,"customers"));
   if(customersSnap.exists()){
     let found=null;
     customersSnap.forEach(child=>{
       if(found)return;
       const data=child.val()||{};
-      if(meowNormalizeGoogleEmail(data.email||data.gmail||"")===email)found={id:String(child.key),data};
+      if(meowNormalizeGoogleEmail(data.email||data.gmail||"")===canonicalEmail)found={id:String(child.key),data};
     });
     if(found){
-      await runTransaction(ref(db,"customerEmailIndex/"+key),old=>old===null?{id:found.id,email,createdAt:Number(found.data.createdAt)||Date.now()}:undefined,{applyLocally:false});
+      await runTransaction(ref(db,"customerEmailIndex/"+key),old=>{
+        if(String(old?.id||"")===found.id)return old;
+        return {id:found.id,email:canonicalEmail,createdAt:Number(found.data.createdAt)||Date.now(),updatedAt:Date.now()};
+      },{applyLocally:false});
       return found;
     }
   }
@@ -5633,6 +5644,12 @@ async function meowGoogleLogin(){
     const found=await meowFindCustomerByGoogleEmail(email);
     let customer=found;
     if(found){
+      // Chốt lại hai ánh xạ sau mỗi lần xác thực để ID vừa đổi không bị trôi về ID cũ.
+      const canonicalKey=meowEmailIndexKey(email);
+      await Promise.all([
+        runTransaction(ref(db,"customerEmailIndex/"+canonicalKey),old=>({id:found.id,email,updatedAt:Date.now()}),{applyLocally:false}),
+        runTransaction(ref(db,"customerGoogleUidIndex/"+meowIdentityKey(String(user.uid||""))),old=>({id:found.id,updatedAt:Date.now()}),{applyLocally:false})
+      ]);
       const patch={email,authProvider:"google",googleUid:String(user.uid||"")};
       if(!found.data.profileAvatar&&user.photoURL)patch.profileAvatar=user.photoURL;
       if(!found.data.name&&user.displayName)patch.name=String(user.displayName).slice(0,45);
@@ -5641,6 +5658,10 @@ async function meowGoogleLogin(){
     }else{
       customer=await meowCreateGoogleCustomer(email,user);
     }
+    await Promise.all([
+      runTransaction(ref(db,"customerEmailIndex/"+meowEmailIndexKey(email)),old=>({id:customer.id,email,updatedAt:Date.now()}),{applyLocally:false}),
+      runTransaction(ref(db,"customerGoogleUidIndex/"+meowIdentityKey(String(user.uid||""))),old=>({id:customer.id,updatedAt:Date.now()}),{applyLocally:false})
+    ]);
     if(msg)msg.textContent=found?"💗 Đã tìm thấy tài khoản MEOW. Đang đăng nhập...":"🎉 Đã tạo ID MEOW mới. Đang vào tài khoản...";
     await meowCompleteGoogleLogin(customer);
   }catch(error){
@@ -9729,7 +9750,8 @@ async function meowEditProfileIdentity(){
   let reservedName=false,reservedEmail=false,reservedCooldown=false,profileChangeTimestamp=Date.now(),serverLastChange=0;
   const oldNameKey=meowIdentityKey(oldName.normalize('NFKC').toLocaleLowerCase('vi').replace(/\s+/g,' '));
   const newNameKey=meowIdentityKey(newName.normalize('NFKC').toLocaleLowerCase('vi').replace(/\s+/g,' '));
-  const emailKey=newEmail?meowIdentityKey(newEmail):'';
+  const canonicalProfileEmail=newEmail?meowNormalizeGoogleEmail(newEmail):'';
+  const emailKey=canonicalProfileEmail?meowEmailIndexKey(canonicalProfileEmail):'';
   try{
    const [oldCustomerSnap,newCustomerSnap,customersSnap]=await Promise.all([
     get(ref(db,'customers/'+oldId)),get(ref(db,'customers/'+newId)),get(ref(db,'customers'))
@@ -9805,7 +9827,12 @@ async function meowEditProfileIdentity(){
    }
    if(oldNameKey!==newNameKey)updates['customerNameIndex/'+oldNameKey]=null;
    updates['customerNameIndex/'+newNameKey]={id:newId,displayName:newName,updatedAt:Date.now()};
-   if(newEmail)updates['customerEmailIndex/'+emailKey]={id:newId,email:newEmail,updatedAt:Date.now()};
+   if(newEmail)updates['customerEmailIndex/'+emailKey]={id:newId,email:canonicalProfileEmail||newEmail,updatedAt:Date.now()};
+   // Nếu tài khoản đã liên kết Google, chuyển luôn khóa Google UID sang ID mới.
+   if(newId!==oldId&&nextRecord.googleUid){
+    const googleUidKey=meowIdentityKey(String(nextRecord.googleUid));
+    updates['customerGoogleUidIndex/'+googleUidKey]={id:newId,updatedAt:Date.now()};
+   }
    // Cập nhật tên/ID trong toàn bộ lịch sử dùng chung, kể cả trường hợp chỉ đổi tên.
    if(newId!==oldId || newName!==oldName){
     const purchasePath=MEOW_PURCHASE_DATA_PATH+'/'+oldId;
