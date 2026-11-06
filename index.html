@@ -8755,7 +8755,10 @@ function applyMeowReaderSettings(save = true){
   if (readerLineHeightLabel) readerLineHeightLabel.textContent = line.toFixed(1);
   let theme = localStorage.getItem("MEOW_READER_THEME") || "white";
   if (page){ readerThemeNames.forEach(name => page.classList.remove("reader-theme-" + name)); page.classList.add("reader-theme-" + theme); }
-  if (save){ localStorage.setItem("MEOW_READER_FONT", font); localStorage.setItem("MEOW_READER_SIZE", String(size)); localStorage.setItem("MEOW_READER_LINE", String(line)); }
+  if (save){
+    localStorage.setItem("MEOW_READER_FONT", font); localStorage.setItem("MEOW_READER_SIZE", String(size)); localStorage.setItem("MEOW_READER_LINE", String(line));
+    window.meowSaveWebPreferences?.({readerFont:font,readerSize:size,readerLine:line,readerTheme:theme});
+  }
 }
 (function initMeowReaderSettings(){
   if (!readerFontSelect) return;
@@ -8880,6 +8883,7 @@ readerLineHeightRange?.addEventListener("input", () => applyMeowReaderSettings()
 document.querySelectorAll("[data-reader-theme]").forEach(btn => btn.addEventListener("click", () => {
   localStorage.setItem("MEOW_READER_THEME", btn.dataset.readerTheme);
   applyMeowReaderSettings(false);
+  window.meowSaveWebPreferences?.({readerTheme:btn.dataset.readerTheme});
 }));
 document.getElementById("readerSettingsReset")?.addEventListener("click", () => {
   readerFontSelect.value = "Be Vietnam Pro, sans-serif"; readerFontSizeRange.value = "19"; readerLineHeightRange.value = "2";
@@ -13099,8 +13103,27 @@ const colorsMap={pink:'#ffe5f0',lavender:'#e8ddff',blue:'#e4f3ff',cream:'#fff2db
 const fontMap={be:"'Be Vietnam Pro',Arial,sans-serif",comfortaa:'Comfortaa,Arial,sans-serif',arial:'Arial,sans-serif',georgia:'Georgia,serif',times:"'Times New Roman',serif"};
 const getId=()=>String(window.meowCheckinGetCustomer?.()?.id||localStorage.getItem('MEOW_ID')||localStorage.getItem('meowCustomerId')||'').trim();
 const keyFor=id=>'meow_web_appearance_v2_'+(id||'guest');
-const clean=x=>({bg:colorsMap[x?.bg]?x.bg:'default',font:fontMap[x?.font]?x.font:'default',image:typeof x?.image==='string'&&(x.image.startsWith('data:image/')||x.image.startsWith('https://blogger.googleusercontent.com/'))?x.image:'',updatedAt:Number(x?.updatedAt)||0});
-const local=id=>{try{return clean(JSON.parse(localStorage.getItem(keyFor(id))||'{}'))}catch{return clean({})}};
+const clean=x=>({
+ bg:colorsMap[x?.bg]?x.bg:'default',
+ font:fontMap[x?.font]?x.font:'default',
+ image:typeof x?.image==='string'&&(x.image.startsWith('data:image/')||x.image.startsWith('https://blogger.googleusercontent.com/'))?x.image:'',
+ siteTheme:x?.siteTheme==='dark'?'dark':'light',
+ readerFont:['Be Vietnam Pro, sans-serif','Arial, sans-serif','Georgia, serif','Times New Roman, serif','Verdana, sans-serif','Comfortaa, sans-serif'].includes(x?.readerFont)?x.readerFont:'Be Vietnam Pro, sans-serif',
+ readerSize:Math.min(32,Math.max(14,Number(x?.readerSize)||19)),
+ readerLine:Math.min(2.8,Math.max(1.4,Number(x?.readerLine)||2)),
+ readerTheme:['white','cream','pink','blue','night'].includes(x?.readerTheme)?x.readerTheme:'white',
+ updatedAt:Number(x?.updatedAt)||0
+});
+const local=id=>{try{
+ const saved=JSON.parse(localStorage.getItem(keyFor(id))||'{}')||{};
+ return clean({...saved,
+  siteTheme:saved.siteTheme??localStorage.getItem('MEOW_SITE_THEME'),
+  readerFont:saved.readerFont??localStorage.getItem('MEOW_READER_FONT'),
+  readerSize:saved.readerSize??localStorage.getItem('MEOW_READER_SIZE'),
+  readerLine:saved.readerLine??localStorage.getItem('MEOW_READER_LINE'),
+  readerTheme:saved.readerTheme??localStorage.getItem('MEOW_READER_THEME')
+ });
+ }catch{return clean({})}};
 let activeId='',settings=clean({}),unsubscribe=null,ready=false,serial=0;
 const cloudRef=id=>ref(db,'miniMeowWebSettings/'+encodeURIComponent(id).replace(/\./g,'%2E'));
 function apply(){
@@ -13109,6 +13132,23 @@ function apply(){
  if(fontMap[settings.font]){b.dataset.mwsFont=settings.font;b.style.setProperty('--mws-font',fontMap[settings.font])}else{delete b.dataset.mwsFont;b.style.removeProperty('--mws-font')}
  if(settings.image){b.dataset.mwsImage='true';b.style.setProperty('--mws-image-url',`url("${settings.image}")`)}else{delete b.dataset.mwsImage;b.style.removeProperty('--mws-image-url')}
  font.value=settings.font;colors.querySelectorAll('[data-mws-color]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.mwsColor===settings.bg)));
+ // Áp dụng các tuỳ chọn web/đọc truyện đã đồng bộ trên tài khoản.
+ try{
+  localStorage.setItem('MEOW_SITE_THEME',settings.siteTheme);
+  document.body.classList.toggle('meowSiteDark',settings.siteTheme==='dark');
+  const themeBtn=document.getElementById('meowThemeToggle');if(themeBtn)themeBtn.textContent=settings.siteTheme==='dark'?'☀️':'🌙';
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content',settings.siteTheme==='dark'?'#251e31':'#fff0f7');
+  localStorage.setItem('MEOW_READER_FONT',settings.readerFont);
+  localStorage.setItem('MEOW_READER_SIZE',String(settings.readerSize));
+  localStorage.setItem('MEOW_READER_LINE',String(settings.readerLine));
+  localStorage.setItem('MEOW_READER_THEME',settings.readerTheme);
+  const fs=document.getElementById('readerFontSelect'),sz=document.getElementById('readerFontSizeRange'),ln=document.getElementById('readerLineHeightRange');
+  if(fs)fs.value=settings.readerFont;if(sz)sz.value=String(settings.readerSize);if(ln)ln.value=String(settings.readerLine);
+  const content=document.getElementById('readerContent'),page=document.getElementById('readerPage');
+  if(content){content.style.fontFamily=settings.readerFont;content.style.fontSize=settings.readerSize+'px';content.style.lineHeight=String(settings.readerLine)}
+  if(page){['white','cream','pink','blue','night'].forEach(n=>page.classList.remove('reader-theme-'+n));page.classList.add('reader-theme-'+settings.readerTheme)}
+  const sizeLabel=document.getElementById('readerFontSizeLabel'),lineLabel=document.getElementById('readerLineHeightLabel');if(sizeLabel)sizeLabel.textContent=settings.readerSize+'px';if(lineLabel)lineLabel.textContent=Number(settings.readerLine).toFixed(1);
+ }catch(e){console.warn('Meow apply synced preferences:',e)}
  try{localStorage.setItem(keyFor(activeId),JSON.stringify(settings))}catch(e){}
 }
 function notify(t){status.textContent=t}
@@ -13118,6 +13158,13 @@ async function save(){
  try{await set(cloudRef(id),copy);if(activeId===id)notify('✓ Đã đồng bộ cài đặt trên mọi thiết bị cùng ID.')}
  catch(e){console.warn('Meow settings sync:',e);if(activeId===id)notify('Chưa đồng bộ được Firebase. Cài đặt tạm lưu trên thiết bị; kiểm tra quyền ghi Firebase.')}
 }
+let preferenceSaveTimer=0;
+window.meowSaveWebPreferences=function(patch){
+ if(!patch||typeof patch!=='object')return;
+ settings={...settings,...patch};apply();
+ clearTimeout(preferenceSaveTimer);
+ preferenceSaveTimer=setTimeout(()=>save(),350);
+};
 function syncAccount(){
  const id=getId();if(id===activeId)return;
  if(unsubscribe){unsubscribe();unsubscribe=null}
@@ -16553,7 +16600,7 @@ const MEOW_WALLET_ICON_IMAGE_URL = "https://blogger.googleusercontent.com/img/b/
   const btn=document.getElementById('meowThemeToggle');
   const setTheme=(dark)=>{document.body.classList.toggle('meowSiteDark',dark);if(btn)btn.textContent=dark?'☀️':'🌙';document.querySelector('meta[name="theme-color"]')?.setAttribute('content',dark?'#251e31':'#fff0f7')};
   setTheme(localStorage.getItem('MEOW_SITE_THEME')==='dark');
-  btn?.addEventListener('click',()=>{const dark=!document.body.classList.contains('meowSiteDark');setTheme(dark);localStorage.setItem('MEOW_SITE_THEME',dark?'dark':'light')});
+  btn?.addEventListener('click',()=>{const dark=!document.body.classList.contains('meowSiteDark');setTheme(dark);localStorage.setItem('MEOW_SITE_THEME',dark?'dark':'light');window.meowSaveWebPreferences?.({siteTheme:dark?'dark':'light'})});
   document.querySelectorAll('.meowCopyBtn').forEach(button=>button.addEventListener('click',async()=>{
    const value=document.getElementById(button.dataset.copyTarget)?.textContent||'';
    try{if(navigator.clipboard && window.isSecureContext)await navigator.clipboard.writeText(value);else{const t=document.createElement('textarea');t.value=value;t.style.position='fixed';t.style.opacity='0';document.body.append(t);t.select();document.execCommand('copy');t.remove()}button.textContent='✓ Đã copy';setTimeout(()=>button.textContent='📋 Copy',1600)}catch(e){button.textContent='Không thể copy'}
