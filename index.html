@@ -4574,7 +4574,7 @@ if (!MEOW_URL_STORY_ID) document.title = "Ổ Lười Nhỏ của Meow";
 const firebaseConfig = {
 
   apiKey:
-    "AIzaSyCMUFJMj74GHONpC3thoTIc2TfZyc91b8",
+    "AIzaSyCMUFJMj74GHONpCj3thoTIc2TfZyc91b8",
 
   authDomain:
     "olncm-fa88c.firebaseapp.com",
@@ -13273,7 +13273,7 @@ body.meowSiteDark .meowChatMsg:has(.meowChatBadge.member) .meowChatIdentity stro
 <script type="module" id="meowChatScript">
 import {initializeApp,getApps,getApp} from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js';
 import {getDatabase,runTransaction,ref,onValue,push,set,update,remove,query,limitToLast,serverTimestamp,get} from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js';
-const config={apiKey:'AIzaSyCMUFJMj74GHONpC3thoTIc2TfZyc91b8',authDomain:'olncm-fa88c.firebaseapp.com',databaseURL:'https://olncm-fa88c-default-rtdb.asia-southeast1.firebasedatabase.app',projectId:'olncm-fa88c',storageBucket:'olncm-fa88c.firebasestorage.app',messagingSenderId:'1047257801200',appId:'1:1047257801200:web:d051244e609b2285ddbd35'};
+const config={apiKey:'AIzaSyCMUFJMj74GHONpCj3thoTIc2TfZyc91b8',authDomain:'olncm-fa88c.firebaseapp.com',databaseURL:'https://olncm-fa88c-default-rtdb.asia-southeast1.firebasedatabase.app',projectId:'olncm-fa88c',storageBucket:'olncm-fa88c.firebasestorage.app',messagingSenderId:'1047257801200',appId:'1:1047257801200:web:d051244e609b2285ddbd35'};
 const app=getApps().length?getApp():initializeApp(config),db=getDatabase(app),$=id=>document.getElementById(id);let room='general',stopRooms=null,stopMessages=null,reply=null,roles={},pendingImage=null,chatRoomsData={},roomLocked=false;
 const me=()=>window.meowCheckinGetCustomer?.()||null;
 const userId=()=>String(me()?.id||me()?.uid||'').trim();
